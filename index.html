@@ -46,7 +46,7 @@ tailwind.config = { theme: { extend: {
   .drawer-scrim { opacity: 0; transition: opacity .3s ease; }
   .drawer-panel { opacity: 0; transform: translateY(-10px); transition: opacity .25s ease, transform .25s ease; }
   #drawer.open .drawer-scrim { opacity: 1; }
-  #drawer.open .drawer-panel { transform: none; }
+  #drawer.open .drawer-panel { opacity: 1; transform: none; }
   input[type=date] { min-height: 1.5rem; font-family: inherit; }
   :focus-visible { outline: 3px solid #C9896C; outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } html { scroll-behavior: auto; } }
@@ -253,7 +253,9 @@ const ROOMS = [
 ];
 ROOMS.forEach(r => { if (PHOTOS[r.id]) r.imgs = [PHOTOS[r.id]]; });
 const $ = (s, r=document) => r.querySelector(s);
-const today = new Date().toISOString().slice(0,10);
+const iso = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0,10);
+const today = iso(new Date());
+const nextDay = v => { if (!v) return ''; const t = new Date(v + 'T00:00:00'); t.setDate(t.getDate() + 1); return iso(t); };
 const BED = n => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="1.3" aria-hidden="true"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18h18M3 21v-3M21 21v-3M6 10V7a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3M12 10V7a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
 
 // Карточки номеров
@@ -289,6 +291,7 @@ function formHTML(wide, title) {
     <label class="block text-sm ${half}">Телефон <span class="text-accentDark">*</span><input name="phone" type="tel" autocomplete="tel" placeholder="+7" class="${INP}"></label>
     <label class="block text-sm">Заезд <span class="text-accentDark">*</span><input name="in" type="date" min="${today}" class="${INP}"></label>
     <label class="block text-sm">Выезд <span class="text-accentDark">*</span><input name="out" type="date" min="${today}" class="${INP}"></label>
+    <p data-date-err class="${full} hidden text-sm text-red-600 -mt-2"></p>
     <label class="block text-sm ${half}">Категория номера <span class="text-accentDark">*</span><select name="room" class="${INP}"><option value="">Выберите номер</option>${ROOMS.map(r => `<option value="${r.name}" data-id="${r.id}">${r.name} — ${r.price}</option>`).join('')}</select></label>
     <label class="block text-sm ${comm}">Комментарий<input name="note" placeholder="Число гостей, пожелания" class="${INP}"></label>
     <div class="${two} flex items-end"><button class="btn w-full btn-main font-semibold rounded-xl px-6 py-3.5 text-base whitespace-nowrap">Оставить заявку <span class="arr">→</span></button></div>
@@ -299,14 +302,23 @@ function formHTML(wide, title) {
 function mountForm(box, wide, title) {
   box.innerHTML = formHTML(wide, title);
   const f = box.querySelector('form'), el = f.elements;
-  el.in.addEventListener('change', () => { el.out.min = el.in.value || today; if (el.out.value && el.out.value <= el.in.value) el.out.value = ''; });
+  const dErr = $('[data-date-err]', f);
+  const checkDates = () => {
+    const bad = !!(el.in.value && el.out.value && el.out.value <= el.in.value);
+    dErr.textContent = bad ? 'Дата выезда должна быть позже даты заезда.' : '';
+    dErr.classList.toggle('hidden', !bad);
+    el.in.style.borderColor = el.out.style.borderColor = bad ? '#dc2626' : '';
+    return !bad;
+  };
+  el.in.addEventListener('change', () => { el.out.min = nextDay(el.in.value) || today; checkDates(); });
+  el.out.addEventListener('change', checkDates);
   f.addEventListener('submit', e => {
     e.preventDefault();
     let msg = '';
     if (!el.name.value.trim()) msg = 'Укажите имя.';
     else if (el.phone.value.replace(/\D/g,'').length < 10) msg = 'Введите телефон полностью, например +7 921 000-00-00.';
     else if (!el.in.value || !el.out.value) msg = 'Выберите даты заезда и выезда.';
-    else if (el.out.value <= el.in.value) msg = 'Дата выезда должна быть позже даты заезда.';
+    else if (!checkDates()) { el.out.focus(); return; }
     else if (!el.room.value) msg = 'Выберите категорию номера.';
     else if (!el.consent.checked) msg = 'Подтвердите согласие на обработку данных.';
     const err = $('[data-err]', f);
@@ -347,6 +359,14 @@ document.addEventListener('click', e => {
   if (e.target.classList.contains('modal')) hide(e.target);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { hide(mBook); hide(mRules); hide(mPhoto); } });
+
+// Переходы по разделам без хэша в адресе
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href^="#"]'); if (!a) return;
+  const t = document.querySelector(a.getAttribute('href')); if (!t) return;
+  e.preventDefault(); t.scrollIntoView({ behavior: 'smooth' });
+});
+if (location.hash) history.replaceState(null, '', location.pathname + location.search);
 
 // Боковое меню
 const drawer = $('#drawer'), burger = $('#burger');
